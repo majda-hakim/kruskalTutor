@@ -13,7 +13,7 @@ class Quiz(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 class Question(models.Model):
-    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE)
+    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE,related_name='questions')
     text = models.TextField()
     option_a = models.CharField(max_length=200)
     option_b = models.CharField(max_length=200)

@@ -3,7 +3,7 @@ import asyncio
 import json
 
 async def invoke_chute(prompt):
-    api_token = "cpk_ac4e9f899c894656b103dbec3e264045.16a9a0c8251b52cbbba99505e6bc716f.FKON2zTNlo1L0BzgVoY9dKJSFFgLd4wg"
+    api_token = "cpk_02eae620a5fb4ff0bdf2e65f5e613946.917e4dab6a7c504ca882cb76be6f8f33.haSvr6ZIhCtg3YEUxwDSxDkMED6nmT9E"
     headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
     body = {
         "model": "deepseek-ai/DeepSeek-V3-0324",
@@ -27,7 +27,12 @@ async def invoke_chute(prompt):
         
 # Run the function and print the response
 async def main():
-    prompt = "Explain Dijkstra's algorithm in simple terms."
+    prompt = (
+            "Create a prequesites Kruskal's Algorithm quiz in JSON format:\n"
+            "{ \"title\": \"Kruskal Quiz\", \"is_final\": false, \"questions\": [\n"
+            "{\"text\": \"Question text\", \"option_a\": \"A\", \"option_b\": \"B\", \"option_c\": \"C\", \"option_d\": \"D\", \"correct_option\": \"A\" }\n"
+            "] }"
+        )
     print(f"Prompt: {prompt}\nResponse:")
     response = await invoke_chute(prompt)
     print("\n\nFull Response:", response)  # Optional: Print the full response at the end

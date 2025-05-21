@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User
+from .models import User , Quiz,Question,QuizResult
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -22,5 +22,17 @@ class UserSerializer(serializers.ModelSerializer):
             user.set_password(password)
             user.save()
         return user
+    
+class QuestionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Question
+        fields = ['id', 'text', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_option']
 
+class QuizSerializer(serializers.ModelSerializer):
+    questions = QuestionSerializer(many=True, read_only=True)
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    
+    class Meta:
+        model = Quiz
+        fields = ['id', 'user', 'title', 'is_final', 'created_at', 'questions']
     
