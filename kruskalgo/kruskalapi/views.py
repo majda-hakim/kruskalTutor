@@ -2,8 +2,8 @@ from django.contrib.auth import authenticate
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
-from .models import User, Quiz, Question, Assignment, AssignmentSubmission, Certificate, ChatMessage, ChatSession, Lesson, LessonProgress
-from .serializer import UserSerializer , QuestionSerializer , QuizSerializer
+from .models import User, Quiz, Question, Assignment, AssignmentSubmission, Certificate, ChatMessage, ChatSession, Lesson, LessonProgress,QuizResult
+from .serializer import UserSerializer , QuestionSerializer , QuizSerializer,QuizResultSerializer
 import aiohttp
 import asyncio
 import json
@@ -102,59 +102,103 @@ def user_detail(request, pk):
         user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-@api_view(['GET'])
+@api_view(['GET', 'POST'])
 def getQuizbyUser(request, pk):
-    try:
-        quiz = Quiz.objects.prefetch_related('questions').get(user__pk=pk, is_final=False)
-        serializer = QuizSerializer(quiz)
-        return Response(serializer.data)
-    except Quiz.DoesNotExist:
+    if request.method == 'GET':
         try:
-            user = User.objects.get(pk=pk)
-        except User.DoesNotExist:
-            return Response({"error": "User not found."}, status=404)
+            quiz = Quiz.objects.prefetch_related('questions').get(user__pk=pk, is_final=False)
+            serializer = QuizSerializer(quiz)
+            return Response(serializer.data)
+        except Quiz.DoesNotExist:
+            try:
+                user = User.objects.get(pk=pk)
+            except User.DoesNotExist:
+                return Response({"error": "User not found."}, status=404)
 
-        prompt = (
-            "Create a prequesites Kruskal's Algorithm quiz in JSON format:\n"
-            "{ \"title\": \"Kruskal Quiz\", \"is_final\": false, \"questions\": [\n"
-            "{\"text\": \"Question text\", \"option_a\": \"A\", \"option_b\": \"B\", \"option_c\": \"C\", \"option_d\": \"D\", \"correct_option\": \"A\" }\n"
-            "] }"
-        )
+            prompt = (
+                "Create a prequesites Kruskal's Algorithm quiz in JSON format:\n"
+                "{ \"title\": \"Kruskal Quiz\", \"is_final\": false, \"questions\": [\n"
+                "{\"text\": \"Question text\", \"option_a\": \"A\", \"option_b\": \"B\", \"option_c\": \"C\", \"option_d\": \"D\", \"correct_option\": \"A\" }\n"
+                "] }"
+            )
+            
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            llm_response = loop.run_until_complete(invoke_chute(prompt))
+            
+            if isinstance(llm_response, dict) and "error" in llm_response:
+                return Response({"error": llm_response["error"]}, status=500)
+
+            
+            quiz_data = llm_response
+
         
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        llm_response = loop.run_until_complete(invoke_chute(prompt))
-        
-        if isinstance(llm_response, dict) and "error" in llm_response:
-            return Response({"error": llm_response["error"]}, status=500)
+            if not isinstance(quiz_data, dict) or "questions" not in quiz_data:
+                return Response({
+                    "error": "Invalid quiz format from LLM",
+                    "raw": quiz_data
+                }, status=400)
 
-        
-        quiz_data = llm_response
-
-       
-        if not isinstance(quiz_data, dict) or "questions" not in quiz_data:
-            return Response({
-                "error": "Invalid quiz format from LLM",
-                "raw": quiz_data
-            }, status=400)
-
-        quiz = Quiz.objects.create(
-            user=user,
-            title=quiz_data.get("title", "Generated Quiz"),
-            is_final=quiz_data.get("is_final", False)
-        )
-
-        for q in quiz_data.get("questions", []):
-            Question.objects.create(
-                quiz=quiz,
-                text=q.get("text", ""),
-                option_a=q.get("option_a", ""),
-                option_b=q.get("option_b", ""),
-                option_c=q.get("option_c", ""),
-                option_d=q.get("option_d", ""),
-                correct_option=q.get("correct_option", "")
+            quiz = Quiz.objects.create(
+                user=user,
+                title=quiz_data.get("title", "Generated Quiz"),
+                is_final=quiz_data.get("is_final", False)
             )
 
-        quiz_with_questions = Quiz.objects.prefetch_related('questions').get(pk=quiz.pk)
-        serializer = QuizSerializer(quiz_with_questions)
-        return Response(serializer.data, status=201)
+            for q in quiz_data.get("questions", []):
+                Question.objects.create(
+                    quiz=quiz,
+                    text=q.get("text", ""),
+                    option_a=q.get("option_a", ""),
+                    option_b=q.get("option_b", ""),
+                    option_c=q.get("option_c", ""),
+                    option_d=q.get("option_d", ""),
+                    correct_option=q.get("correct_option", "")
+                )
+
+            quiz_with_questions = Quiz.objects.prefetch_related('questions').get(pk=quiz.pk)
+            serializer = QuizSerializer(quiz_with_questions)
+            return Response(serializer.data, status=201)
+    elif request.method == 'POST':
+        try:
+            
+            quiz = Quiz.objects.prefetch_related('questions').get(user__pk=pk, is_final=False)
+            responses = [
+                request.data.get('response1'),
+                request.data.get('response2'), 
+                request.data.get('response3'),
+                request.data.get('response4'),
+                request.data.get('response5')
+            ]
+            
+            
+            questions = quiz.questions.all().order_by('id')
+            if len(questions) != 5:
+                return Response({"error": "Quiz should have exactly 5 questions"}, status=400)
+            
+            
+            correct_answers = [q.correct_option for q in questions]
+            score = sum(1 for i in range(5) if responses[i] == correct_answers[i]) / 5 * 100
+            
+           
+            passed = score >= 70
+            
+           
+            QuizResult.objects.create(
+                user=quiz.user,
+                quiz=quiz,
+                score=score,
+                passed=passed
+            )
+            
+            quizResult = QuizResult.objects.get(user=quiz.user, quiz=quiz)
+            serializer = QuizResultSerializer(quizResult)
+            return Response(serializer.data, status=201)
+            
+        except Quiz.DoesNotExist:
+            return Response({"error": "No active quiz found for this user"}, status=404)
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
+
+        
+            
